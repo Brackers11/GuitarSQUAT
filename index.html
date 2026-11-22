@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GuitarSQUAT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="overlay">
+  <section class="screen" id="screen-start">
+    <h1 class="logo">Guitar<span>SQUAT</span></h1>
+    <p class="tag">The rhythm game you play with your legs.</p>
+    <div class="card">
+      <ol class="how">
+        <li>Put your laptop on a table and stand <b>2–3&nbsp;m back</b> so the camera sees your whole body (head to feet).</li>
+        <li>Notes scroll toward the ring. <b>Squat</b> so you hit the bottom as a note reaches the ring.</li>
+        <li><b>Purple bars</b> are holds: stay down until the bar ends.</li>
+        <li>Pass both songs (60%+ accuracy) to <b>beat the game</b>.</li>
+      </ol>
+      <button class="btn primary" id="btn-camera">📷 Start with camera</button>
+      <button class="btn ghost" id="btn-keyboard">⌨️ Test with keyboard (hold Space = squat)</button>
+      <p class="status" id="start-status"></p>
+    </div>
+  </section>
+
+  <section class="screen hidden" id="screen-menu">
+    <h1 class="logo small">Guitar<span>SQUAT</span></h1>
+    <p class="mode-badge" id="mode-badge"></p>
+    <div class="songs" id="song-list"></div>
+    <div class="card row-card">
+      <div>
+        <div class="label">Difficulty</div>
+        <div class="seg" id="diff-seg">
+          <button data-d="easy">Easy</button><button data-d="normal">Normal</button><button data-d="hard">Hard</button>
+        </div>
+      </div>
+      <div>
+        <div class="label">Timing offset <span id="offset-val">0 ms</span></div>
+        <input type="range" id="offset" min="-250" max="250" step="10" value="0">
+        <div class="hint">If squats feel late, turn this up. If they feel early, turn it down.</div>
+      </div>
+      <div class="stack">
+        <button class="btn ghost" id="btn-recal">Recalibrate</button>
+        <div class="hint" id="lifetime"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen hidden" id="screen-results">
+    <h2 id="res-title">Results</h2>
+    <div class="card results">
+      <div class="grade" id="res-grade">A</div>
+      <div class="pass" id="res-pass"></div>
+      <div class="stats" id="res-stats"></div>
+      <div class="btns">
+        <button class="btn primary" id="btn-retry">Retry</button>
+        <button class="btn ghost" id="btn-menu">Song menu</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen hidden" id="screen-complete">
+    <h1 class="logo">YOU BEAT<br><span>GUITARSQUAT</span></h1>
+    <p class="tag big">Both songs cleared. Your legs may now rest.</p>
+    <div class="card results"><div class="stats" id="complete-stats"></div>
+      <button class="btn primary" id="btn-complete-menu">Back to menu</button>
+    </div>
+  </section>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
