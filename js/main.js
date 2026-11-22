@@ -44,19 +44,39 @@ async function ensureSynth() {
 }
 
 // ---------- title ----------
+const camSelect = $('cam-select');
+async function listCameras() {
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    const saved = store.get('camera', '');
+    camSelect.innerHTML = '<option value="">Default camera</option>' + devs.map((d, i) =>
+      `<option value="${d.deviceId}">${d.label || 'Camera ' + (i + 1) + ' (allow camera to see names)'}</option>`).join('');
+    if (devs.some((d) => d.deviceId === saved)) camSelect.value = saved;
+  } catch (e) { console.warn(e); }
+}
+listCameras();
+navigator.mediaDevices && navigator.mediaDevices.addEventListener && navigator.mediaDevices.addEventListener('devicechange', listCameras);
+camSelect.onchange = () => store.set('camera', camSelect.value);
+
 $('btn-camera').onclick = async () => {
   const st = $('start-status');
   $('btn-camera').disabled = $('btn-keyboard').disabled = true;
   try {
     await ensureSynth();
-    if (!pose.ready) await pose.init((m) => (st.textContent = m));
+    await pose.init((m) => (st.textContent = m), camSelect.value || undefined);
+    listCameras();
     mode = 'camera'; detector.keyboard = false;
     st.textContent = '';
     startCalibration();
   } catch (e) {
     console.error(e);
+    listCameras();
     st.textContent = (e && e.name === 'NotAllowedError')
       ? 'Camera permission was blocked. Allow camera access in the address bar and try again.'
+      : (e && (e.name === 'NotReadableError' || e.name === 'TrackStartError'))
+      ? 'That camera is in use by another app (probably OBS). In OBS click "Start Virtual Camera", then choose "OBS Virtual Camera" above and try again.'
+      : (e && e.name === 'OverconstrainedError')
+      ? 'That camera is no longer available. Pick another one above.'
       : 'Could not start camera / pose model: ' + (e && e.message ? e.message : e);
   } finally {
     $('btn-camera').disabled = $('btn-keyboard').disabled = false;

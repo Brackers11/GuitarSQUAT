@@ -40,3 +40,4 @@ h2{font-family:Bungee,sans-serif;font-size:36px;margin:0 0 16px;text-align:cente
 .stats div:nth-child(even){text-align:right;font-weight:800}
 .btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;width:100%}
 .btns .btn{flex:1;min-width:140px}
+.select{font:inherit;padding:12px;border-radius:10px;background:#1a0f33;color:var(--text);border:1px solid var(--line)}
