@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0618">
+<title>Squat Counter</title>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--hot:#ff5b2e;--hot2:#ffb21e;--green:#3ee07c;--text:#f4efff;--muted:#b9acd9}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#0b0618;color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none}
+#stage{position:fixed;inset:0}
+video,#ov{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mirror{transform:scaleX(-1)}
+#hud{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;pointer-events:none;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+#count{font-family:Bungee,Impact,sans-serif;font-size:min(34vw,220px);line-height:1;margin-top:2vh;text-shadow:0 4px 30px rgba(0,0,0,.8),0 0 2px #000;transition:transform .12s}
+#count.bump{transform:scale(1.15);color:var(--hot2)}
+#label{font-family:Bungee,sans-serif;font-size:min(6vw,32px);letter-spacing:2px;text-shadow:0 2px 12px #000}
+#stats{margin-top:8px;font-weight:800;font-size:min(5vw,22px);text-shadow:0 2px 10px #000;display:flex;gap:18px}
+#meter{position:absolute;right:14px;top:30%;width:18px;height:40%;border-radius:9px;background:rgba(255,255,255,.15);overflow:hidden}
+#meter div{width:100%;height:0;background:linear-gradient(#7ee8ff,var(--hot));border-radius:9px}
+#meter.down div{background:linear-gradient(#7ee8ff,var(--green))}
+#msg{margin-top:auto;margin-bottom:12px;text-align:center;font-weight:800;font-size:min(6vw,26px);text-shadow:0 2px 12px #000;max-width:600px}
+#bar{display:flex;gap:8px;pointer-events:auto;flex-wrap:wrap;justify-content:center}
+button{font:inherit;font-weight:800;font-size:16px;border-radius:12px;padding:12px 16px;border:1px solid rgba(255,255,255,.25);background:rgba(11,6,24,.7);color:var(--text)}
+button.primary{background:linear-gradient(90deg,var(--hot),var(--hot2));border:none;color:#1b0b00}
+#start{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:radial-gradient(ellipse at 50% 0%,#3a1470 0%,#0b0618 70%)}
+#start h1{font-family:Bungee,sans-serif;font-size:min(14vw,64px);margin:0;line-height:1}
+#start h1 span{color:var(--hot2)}
+#start p{color:var(--muted);max-width:420px;line-height:1.5;margin:0}
+#err{color:var(--hot2);min-height:1.2em}
+.hide{display:none!important}
+#reset{position:relative;overflow:hidden}
+#reset i{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(255,91,46,.6)}
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="vid" playsinline muted autoplay></video>
+  <canvas id="ov"></canvas>
+  <div id="meter"><div></div></div>
+  <div id="hud">
+    <div id="label">SQUATS</div>
+    <div id="count">0</div>
+    <div id="stats"><span id="time">0:00</span><span id="rate">0 / min</span></div>
+    <div id="msg"></div>
+    <div id="bar">
+      <button id="btn-cal">Recalibrate</button>
+      <button id="btn-flip">Flip camera</button>
+      <button id="btn-hide">Hide buttons</button>
+      <button id="reset">Hold to reset<i></i></button>
+    </div>
+  </div>
+</div>
+<div id="start">
+  <h1>SQUAT<span>COUNTER</span></h1>
+  <p>Prop your phone up 2–3 m away so it sees your whole body, head to feet. Then calibrate: stand tall, then hold a deep squat.</p>
+  <button class="primary" id="go-front">Start (front camera)</button>
+  <button id="go-back">Start (back camera)</button>
+  <div id="err"></div>
+</div>
+
+<script type="module">
+import { PoseTracker, SquatDetector, CONNECTIONS } from './js/pose.js';
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('sqc_' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('sqc_' + k, JSON.stringify(v)); } catch {} },
+};
+
+const pose = new PoseTracker();
+const det = new SquatDetector();
+const vid = $('vid'), ov = $('ov'), octx = ov.getContext('2d');
+let facing = store.get('facing', 'user');
+let count = store.get('count', 0);
+let elapsed = store.get('elapsed', 0);       // seconds of counted time before this session
+let startedAt = null;                         // performance.now() when timer (re)started
+let cal = null, audio = null, wake = null, hidden = false;
+
+function beep(hi) {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const t = audio.currentTime, o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = hi ? 1568 : 880; o.type = 'sine';
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.3, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+    o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + 0.2);
+  } catch {}
+}
+async function keepAwake() {
+  try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
+function totalSeconds() { return elapsed + (startedAt ? (performance.now() - startedAt) / 1000 : 0); }
+function render() {
+  $('count').textContent = count;
+  const s = Math.floor(totalSeconds());
+  $('time').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  $('rate').textContent = `${s > 5 ? (count / (s / 60)).toFixed(1) : 0} / min`;
+}
+
+det.on(() => {
+  if (cal) return;
+  if (!startedAt) startedAt = performance.now();
+  count++; store.set('count', count); beep(count % 10 === 0);
+  const c = $('count'); c.classList.add('bump'); setTimeout(() => c.classList.remove('bump'), 140);
+  render();
+});
+setInterval(() => { render(); if (startedAt) store.set('elapsed', totalSeconds()); }, 500);
+// persist timer correctly across refreshes
+window.addEventListener('pagehide', () => store.set('elapsed', totalSeconds()));
+
+async function start(f) {
+  facing = f; store.set('facing', f);
+  $('err').textContent = '';
+  try {
+    beep(false); keepAwake();
+    await pose.init((m) => ($('err').textContent = m), undefined, { facingMode: facing, width: 720, height: 1280 });
+    vid.srcObject = pose.video.srcObject; await vid.play();
+    vid.classList.toggle('mirror', facing === 'user'); ov.classList.toggle('mirror', facing === 'user');
+    $('start').classList.add('hide');
+    const saved = store.get('calib', null);
+    if (saved) { det.calib = saved; $('msg').textContent = ''; } else calibrate();
+  } catch (e) {
+    $('err').textContent = e && e.name === 'NotAllowedError' ? 'Camera blocked. Allow camera access and try again.' : 'Could not start: ' + (e.message || e);
+  }
+}
+$('go-front').onclick = () => start('user');
+$('go-back').onclick = () => start('environment');
+$('btn-flip').onclick = () => start(facing === 'user' ? 'environment' : 'user');
+$('btn-cal').onclick = () => calibrate();
+$('btn-hide').onclick = () => { hidden = true; $('bar').classList.add('hide'); $('msg').textContent = ''; };
+$('stage').addEventListener('click', (e) => { if (hidden && e.target.tagName !== 'BUTTON') { hidden = false; $('bar').classList.remove('hide'); } });
+
+// hold-to-reset
+let holdT = null;
+const resetBtn = $('reset'), fill = resetBtn.querySelector('i');
+const cancelHold = () => { clearInterval(holdT); holdT = null; fill.style.width = '0'; };
+resetBtn.addEventListener('pointerdown', () => {
+  const t0 = performance.now();
+  holdT = setInterval(() => {
+    const k = (performance.now() - t0) / 1500; fill.style.width = Math.min(100, k * 100) + '%';
+    if (k >= 1) { cancelHold(); count = 0; elapsed = 0; startedAt = null; store.set('count', 0); store.set('elapsed', 0); render(); beep(true); }
+  }, 30);
+});
+['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => resetBtn.addEventListener(ev, cancelHold));
+
+// calibration
+function calibrate() {
+  if (startedAt) { elapsed = totalSeconds(); startedAt = null; }
+  cal = { step: 'stand', t: performance.now(), samples: [], stand: null, last: -1 };
+  det.calib = null;
+}
+function updateCal() {
+  const el = (performance.now() - cal.t) / 1000;
+  const name = cal.step === 'stand' ? 'STAND TALL' : 'SQUAT DEEP & HOLD';
+  if (el < 3) {
+    const cd = Math.ceil(3 - el);
+    if (cd !== cal.last) { cal.last = cd; beep(false); }
+    $('msg').textContent = `${name}… ${cd}`;
+  } else if (el < 4.5) {
+    if (cal.last !== 0) { cal.last = 0; beep(true); }
+    $('msg').textContent = `${name}: hold still`;
+    if (pose.metrics && pose.visible) cal.samples.push(pose.metrics);
+  } else {
+    if (cal.samples.length < 8) { $('msg').textContent = "Can't see you. Get your whole body in frame."; cal.t = performance.now() + 1500; cal.samples = []; cal.last = -1; return; }
+    if (cal.step === 'stand') { cal.stand = cal.samples; cal.step = 'squat'; cal.t = performance.now(); cal.samples = []; cal.last = -1; return; }
+    const c = SquatDetector.makeCalib(cal.stand, cal.samples);
+    if (!c) { $('msg').textContent = 'Squat deeper and keep your legs in view. Again!'; cal = { step: 'stand', t: performance.now() + 1500, samples: [], stand: null, last: -1 }; return; }
+    det.calib = c; det.depth = 0; det.down = false; store.set('calib', c); cal = null;
+    $('msg').textContent = 'Calibrated! Start squatting.'; setTimeout(() => { if (!cal) $('msg').textContent = ''; }, 2500);
+  }
+}
+
+function drawSkeleton() {
+  const W = ov.clientWidth, H = ov.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+  if (ov.width !== W * dpr || ov.height !== H * dpr) { ov.width = W * dpr; ov.height = H * dpr; }
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0); octx.clearRect(0, 0, W, H);
+  const lm = pose.landmarks; if (!lm || !pose.visible) return;
+  const vw = vid.videoWidth || 1, vh = vid.videoHeight || 1, s = Math.max(W / vw, H / vh);
+  const ox = (W - vw * s) / 2, oy = (H - vh * s) / 2, P = (i) => [ox + lm[i].x * vw * s, oy + lm[i].y * vh * s];
+  octx.strokeStyle = det.down ? '#3ee07c' : 'rgba(255,255,255,.8)'; octx.lineWidth = 4; octx.lineCap = 'round';
+  for (const [a, b] of CONNECTIONS) {
+    if ((lm[a].visibility ?? 1) < 0.4 || (lm[b].visibility ?? 1) < 0.4) continue;
+    const [ax, ay] = P(a), [bx, by] = P(b); octx.beginPath(); octx.moveTo(ax, ay); octx.lineTo(bx, by); octx.stroke();
+  }
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  if (pose.tick()) { det.update(pose); drawSkeleton(); }
+  if (cal) updateCal();
+  else if (pose.ready && !pose.visible && !hidden) $('msg').textContent = "Can't see you. Step into frame.";
+  else if (pose.ready && $('msg').textContent.startsWith("Can't see")) $('msg').textContent = '';
+  const m = $('meter'); m.firstElementChild.style.height = Math.max(0, Math.min(1, det.depth)) * 100 + '%';
+  m.classList.toggle('down', det.down);
+}
+render(); requestAnimationFrame(frame);
+window.__sqc = { det, pose };
+</script>
+</body>
+</html>

@@ -13,17 +13,17 @@ export class PoseTracker {
     this.video.playsInline = true; this.video.muted = true; this.video.autoplay = true;
     this.landmarks = null; this.metrics = null; this.lastSeen = 0; this.ready = false; this.lastVideoTime = -1;
   }
-  async openCamera(deviceId) {
+  async openCamera(deviceId, opts = {}) {
     if (this.video.srcObject) this.video.srcObject.getTracks().forEach((t) => t.stop());
-    const video = { width: { ideal: 640 }, height: { ideal: 480 } };
-    if (deviceId) video.deviceId = { exact: deviceId }; else video.facingMode = 'user';
+    const video = { width: { ideal: opts.width || 640 }, height: { ideal: opts.height || 480 } };
+    if (deviceId) video.deviceId = { exact: deviceId }; else video.facingMode = opts.facingMode || 'user';
     const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
     this.video.srcObject = stream;
     await this.video.play();
   }
-  async init(onStatus, deviceId) {
+  async init(onStatus, deviceId, camOpts) {
     onStatus('Asking for camera access…');
-    await this.openCamera(deviceId);
+    await this.openCamera(deviceId, camOpts);
     if (this.ready) return;
     onStatus('Loading pose model (first time takes a few seconds)…');
     const { FilesetResolver, PoseLandmarker } = await import(`${VISION}/vision_bundle.mjs`);
